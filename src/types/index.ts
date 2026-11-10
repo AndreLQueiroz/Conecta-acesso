@@ -14,7 +14,8 @@ export const STATUS_REGISTRO = [
   'Melhoria informada',
 ] as const;
 
-export type StatusRegistro = (typeof STATUS_REGISTRO)[number];
+export type StatusRegistro =
+  (typeof STATUS_REGISTRO)[number];
 
 export type Registro = {
   id: number;

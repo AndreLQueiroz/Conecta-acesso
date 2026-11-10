@@ -1,14 +1,25 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
-import { router, useLocalSearchParams } from 'expo-router';
+import {
+  router,
+  useFocusEffect,
+  useLocalSearchParams,
+} from 'expo-router';
+
 import { useSQLiteContext } from 'expo-sqlite';
 
 import {
@@ -51,7 +62,10 @@ export default function DetalheScreen() {
 
   const [salvando, setSalvando] = useState(false);
   const [mensagem, setMensagem] = useState('');
-  const [confirmarExclusao, setConfirmarExclusao] = useState(false);
+  const [erroFoto, setErroFoto] = useState(false);
+
+  const [confirmarExclusao, setConfirmarExclusao] =
+    useState(false);
 
   const [parceiros, setParceiros] = useState<Parceiro[]>([]);
   const [loadingParceiros, setLoadingParceiros] = useState(false);
@@ -72,6 +86,7 @@ export default function DetalheScreen() {
       const resultado = await buscarRegistro(db, registroId);
 
       setRegistro(resultado);
+      setErroFoto(false);
 
       if (resultado) {
         setStatusSelecionado(resultado.status);
@@ -83,9 +98,11 @@ export default function DetalheScreen() {
     }
   }, [db, id]);
 
-  useEffect(() => {
-    void carregarRegistro();
-  }, [carregarRegistro]);
+  useFocusEffect(
+    useCallback(() => {
+      void carregarRegistro();
+    }, [carregarRegistro]),
+  );
 
   const categoria = registro?.categoria;
 
@@ -127,7 +144,9 @@ export default function DetalheScreen() {
       );
 
       setRegistro((atual) =>
-        atual ? { ...atual, status: statusSelecionado } : null,
+        atual
+          ? { ...atual, status: statusSelecionado }
+          : null,
       );
 
       setMensagem('Status de demonstração salvo.');
@@ -168,29 +187,6 @@ export default function DetalheScreen() {
       </Screen>
     );
   }
-  <Card>
-  <Text accessibilityRole="header" style={styles.heading}>
-    Avaliação preliminar
-  </Text>
-
-  <Body>
-    Complemente o relato com informações sobre entrada,
-    circulação, atendimento e sinalização.
-  </Body>
-
-  <Button
-    title="Abrir questionário do estabelecimento"
-    disabled={salvando}
-    onPress={() =>
-      router.push({
-        pathname: '/avaliar',
-        params: {
-          id: String(registro.id),
-        },
-      })
-    }
-  />
-</Card>
 
   if (!registro) {
     return (
@@ -228,15 +224,60 @@ export default function DetalheScreen() {
         </Text>
 
         <Body>Local: {registro.localizacao}</Body>
-
         <Body>Categoria: {registro.categoria}</Body>
-
         <Body>{registro.descricao}</Body>
 
         <Body>
           Registrado em{' '}
           {new Date(registro.criadoEm).toLocaleString('pt-BR')}
         </Body>
+      </Card>
+
+      {registro.foto ? (
+        <Card>
+          <Text
+            accessibilityRole="header"
+            style={styles.heading}
+          >
+            Foto do relato
+          </Text>
+
+          <Image
+            source={{ uri: registro.foto }}
+            accessibilityLabel={
+              `Foto da barreira relatada em ${registro.estabelecimento}`
+            }
+            resizeMode="contain"
+            style={styles.photo}
+            onError={() => setErroFoto(true)}
+          />
+
+          {erroFoto ? (
+            <ErrorMessage message="Não foi possível exibir a foto deste registro." />
+          ) : null}
+        </Card>
+      ) : null}
+
+      <Card>
+        <Text accessibilityRole="header" style={styles.heading}>
+          Avaliação preliminar
+        </Text>
+
+        <Body>
+          Complemente o relato com informações sobre entrada,
+          circulação, atendimento e sinalização.
+        </Body>
+
+        <Button
+          title="Abrir questionário do estabelecimento"
+          disabled={salvando}
+          onPress={() =>
+            router.push({
+              pathname: '/avaliar',
+              params: { id: String(registro.id) },
+            })
+          }
+        />
       </Card>
 
       <Card>
@@ -355,7 +396,8 @@ export default function DetalheScreen() {
           </Text>
 
           <Body>
-            O registro será removido do banco local.
+            O registro, sua foto e o questionário associado
+            serão removidos do banco local.
             Esta ação não pode ser desfeita.
           </Body>
 
@@ -402,6 +444,13 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.body,
     fontWeight: '700',
     color: theme.colors.primary,
+  },
+
+  photo: {
+    width: '100%',
+    height: theme.sizes.photoHeight,
+    borderRadius: theme.radius.small,
+    backgroundColor: theme.colors.background,
   },
 
   options: {

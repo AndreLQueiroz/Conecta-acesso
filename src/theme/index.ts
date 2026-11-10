@@ -34,5 +34,6 @@ export const theme = {
   sizes: {
     touchTarget: 48,
     description: 120,
+    photoHeight: 220,
   },
 };

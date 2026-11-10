@@ -21,10 +21,15 @@ import {
   Title,
 } from '../src/components/ui';
 
+import { FotoRegistro } from '../src/components/FotoRegistro';
+
 import { criarRegistro } from '../src/database/registros';
 import { theme } from '../src/theme';
 
-import { CATEGORIAS, type Categoria } from '../src/types';
+import {
+  CATEGORIAS,
+  type Categoria,
+} from '../src/types';
 
 export default function RegistrarScreen() {
   const db = useSQLiteContext();
@@ -32,8 +37,11 @@ export default function RegistrarScreen() {
 
   const [estabelecimento, setEstabelecimento] = useState('');
   const [localizacao, setLocalizacao] = useState('');
-  const [categoria, setCategoria] = useState<Categoria>('Entrada');
+  const [categoria, setCategoria] =
+    useState<Categoria>('Entrada');
+
   const [descricao, setDescricao] = useState('');
+  const [foto, setFoto] = useState<string | null>(null);
 
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
@@ -43,12 +51,20 @@ export default function RegistrarScreen() {
 
     setErro('');
 
-    if (
-      !estabelecimento.trim() ||
-      !localizacao.trim() ||
-      !descricao.trim()
-    ) {
-      setErro('Preencha o estabelecimento, o local e a descrição.');
+    if (!estabelecimento.trim()) {
+      setErro('Informe o nome do estabelecimento.');
+      return;
+    }
+
+    if (!localizacao.trim()) {
+      setErro('Informe a localização do estabelecimento.');
+      return;
+    }
+
+    if (descricao.trim().length < 10) {
+      setErro(
+        'Descreva a dificuldade com pelo menos 10 caracteres.',
+      );
       return;
     }
 
@@ -61,6 +77,7 @@ export default function RegistrarScreen() {
         localizacao,
         categoria,
         descricao,
+        foto,
       });
 
       router.replace({
@@ -69,7 +86,7 @@ export default function RegistrarScreen() {
       });
     } catch {
       setErro(
-        'Não foi possível salvar o registro. Tente novamente.',
+        'Não foi possível salvar o registro. Verifique o espaço disponível e tente novamente.',
       );
     } finally {
       enviando.current = false;
@@ -80,18 +97,23 @@ export default function RegistrarScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <Screen>
         <Title>Qual dificuldade você encontrou?</Title>
 
         <Body>
-          Nesta demonstração, use informações fictícias e não
-          inclua nomes, telefones ou outros dados pessoais.
+          Descreva a barreira observada para organizar as
+          informações sobre o acesso ao estabelecimento.
+        </Body>
+
+        <Body>
+          Nesta demonstração, use dados e imagens fictícios.
+          Não inclua nomes de pessoas, telefones ou documentos.
         </Body>
 
         <Field
-          label="Nome do estabelecimento (obrigatório)"
+          label="Estabelecimento (obrigatório)"
           placeholder="Ex.: Mercado Exemplo"
           value={estabelecimento}
           onChangeText={setEstabelecimento}
@@ -120,7 +142,7 @@ export default function RegistrarScreen() {
               <Pressable
                 key={item}
                 accessibilityRole="radio"
-                accessibilityLabel={item}
+                accessibilityLabel={`Categoria: ${item}`}
                 accessibilityState={{
                   checked: selecionada,
                   disabled: salvando,
@@ -147,13 +169,19 @@ export default function RegistrarScreen() {
         </View>
 
         <Field
-          label="Descrição da dificuldade (obrigatório)"
+          label="Descrição (obrigatório, mínimo de 10 caracteres)"
           placeholder="Explique o que dificultou o acesso ou o uso do local."
           value={descricao}
           onChangeText={setDescricao}
           multiline
           maxLength={1000}
           editable={!salvando}
+        />
+
+        <FotoRegistro
+          foto={foto}
+          onChange={setFoto}
+          disabled={salvando}
         />
 
         {erro ? <ErrorMessage message={erro} /> : null}
@@ -165,8 +193,13 @@ export default function RegistrarScreen() {
         />
 
         <Body>
-          O registro é um relato e não substitui uma avaliação
-          técnica profissional.
+          O registro fica salvo neste dispositivo.
+          Não há envio automático ao estabelecimento.
+        </Body>
+
+        <Body>
+          O relato não substitui uma avaliação técnica
+          profissional de acessibilidade.
         </Body>
       </Screen>
     </KeyboardAvoidingView>
