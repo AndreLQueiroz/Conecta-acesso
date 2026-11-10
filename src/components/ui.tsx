@@ -15,12 +15,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { theme } from '../theme';
 
-export function Screen({ children }: { children: ReactNode }) {
+export function Screen({
+  children,
+}: {
+  children: ReactNode;
+}) {
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         {children}
       </ScrollView>
@@ -28,7 +33,11 @@ export function Screen({ children }: { children: ReactNode }) {
   );
 }
 
-export function Title({ children }: { children: ReactNode }) {
+export function Title({
+  children,
+}: {
+  children: ReactNode;
+}) {
   return (
     <Text accessibilityRole="header" style={styles.title}>
       {children}
@@ -36,11 +45,19 @@ export function Title({ children }: { children: ReactNode }) {
   );
 }
 
-export function Body({ children }: { children: ReactNode }) {
+export function Body({
+  children,
+}: {
+  children: ReactNode;
+}) {
   return <Text style={styles.body}>{children}</Text>;
 }
 
-export function Card({ children }: { children: ReactNode }) {
+export function Card({
+  children,
+}: {
+  children: ReactNode;
+}) {
   return <View style={styles.card}>{children}</View>;
 }
 
@@ -57,22 +74,22 @@ export function Button({
   disabled?: boolean;
   secondary?: boolean;
 }) {
-  const unavailable = disabled || loading;
+  const indisponivel = disabled || loading;
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={title}
       accessibilityState={{
-        disabled: unavailable,
+        disabled: indisponivel,
         busy: loading,
       }}
-      disabled={unavailable}
+      disabled={indisponivel}
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
         secondary && styles.secondaryButton,
-        (pressed || unavailable) && styles.dimmed,
+        (pressed || indisponivel) && styles.dimmed,
       ]}
     >
       {loading ? (
@@ -100,7 +117,9 @@ export function Button({
 export function Field({
   label,
   ...props
-}: TextInputProps & { label: string }) {
+}: TextInputProps & {
+  label: string;
+}) {
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
@@ -119,15 +138,49 @@ export function Field({
   );
 }
 
-export function ErrorMessage({ message }: { message: string }) {
+export function ErrorMessage({
+  message,
+}: {
+  message: string;
+}) {
   return (
-    <Text
-      accessibilityRole="alert"
-      accessibilityLiveRegion="polite"
-      style={styles.error}
-    >
-      {message}
-    </Text>
+    <View style={styles.errorBox}>
+      <Text
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+        style={styles.error}
+      >
+        {message}
+      </Text>
+    </View>
+  );
+}
+
+export function StatusBadge({
+  status,
+}: {
+  status: string;
+}) {
+  const variant =
+    status === 'Melhoria informada'
+      ? styles.statusSuccess
+      : status === 'Em melhoria'
+        ? styles.statusWarning
+        : styles.statusDefault;
+
+  const textVariant =
+    status === 'Melhoria informada'
+      ? styles.statusSuccessText
+      : status === 'Em melhoria'
+        ? styles.statusWarningText
+        : styles.statusDefaultText;
+
+  return (
+    <View style={[styles.statusBadge, variant]}>
+      <Text style={[styles.statusText, textVariant]}>
+        {status}
+      </Text>
+    </View>
   );
 }
 
@@ -138,24 +191,29 @@ const styles = StyleSheet.create({
   },
 
   content: {
+    width: '100%',
+    maxWidth: theme.sizes.contentMaxWidth,
+    alignSelf: 'center',
     padding: theme.spacing.lg,
+    paddingBottom: theme.spacing.xxl,
     gap: theme.spacing.md,
   },
 
   title: {
     fontSize: theme.fontSize.title,
-    fontWeight: '700',
+    fontWeight: '800',
     color: theme.colors.text,
   },
 
   body: {
     fontSize: theme.fontSize.body,
     color: theme.colors.muted,
+    lineHeight: theme.fontSize.body * 1.5,
   },
 
   card: {
-    padding: theme.spacing.md,
-    gap: theme.spacing.sm,
+    padding: theme.spacing.lg,
+    gap: theme.spacing.md,
     borderRadius: theme.radius.medium,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -216,8 +274,50 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
 
+  errorBox: {
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.small,
+    backgroundColor: theme.colors.dangerLight,
+  },
+
   error: {
     fontSize: theme.fontSize.body,
     color: theme.colors.danger,
+  },
+
+  statusBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.radius.pill,
+  },
+
+  statusText: {
+    fontSize: theme.fontSize.small,
+    fontWeight: '700',
+  },
+
+  statusDefault: {
+    backgroundColor: theme.colors.primaryLight,
+  },
+
+  statusDefaultText: {
+    color: theme.colors.primary,
+  },
+
+  statusSuccess: {
+    backgroundColor: theme.colors.successLight,
+  },
+
+  statusSuccessText: {
+    color: theme.colors.success,
+  },
+
+  statusWarning: {
+    backgroundColor: theme.colors.warningLight,
+  },
+
+  statusWarningText: {
+    color: theme.colors.warning,
   },
 });

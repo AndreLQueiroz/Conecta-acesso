@@ -1,16 +1,22 @@
-import type { Categoria, Parceiro } from '../types';
+import type {
+  Categoria,
+  Parceiro,
+} from '../types';
 
 const parceiros: Parceiro[] = [
   {
     id: '1',
-    nome: 'Projeto Acesso — exemplo fictício',
-    especialidade: 'Avaliação de entrada e circulação',
+    nome: 'Projeto Acesso',
+    especialidade:
+      'Avaliação profissional de entradas e circulação.',
     categorias: ['Entrada', 'Circulação'],
   },
+
   {
     id: '2',
-    nome: 'Comunicação Clara — exemplo fictício',
-    especialidade: 'Avaliação de sinalização acessível',
+    nome: 'Comunicação Clara',
+    especialidade:
+      'Avaliação de sinalização e orientação nos espaços.',
     categorias: ['Sinalização'],
   },
 ];
@@ -28,7 +34,9 @@ export async function consultarParceiros(
   });
 
   if (opcoes.simularErro) {
-    throw new Error('Não foi possível consultar os parceiros.');
+    throw new Error(
+      'Falha simulada na consulta de parceiros.',
+    );
   }
 
   return parceiros.filter((parceiro) =>
