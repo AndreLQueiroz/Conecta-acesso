@@ -14,6 +14,8 @@ import {
   View,
 } from 'react-native';
 
+import { Ionicons } from '@expo/vector-icons';
+
 import {
   router,
   useFocusEffect,
@@ -28,6 +30,7 @@ import {
   Card,
   ErrorMessage,
   Screen,
+  StatusBadge,
   Title,
 } from '../../src/components/ui';
 
@@ -35,27 +38,64 @@ import {
   atualizarStatusRegistro,
   buscarRegistro,
   excluirRegistro,
+  listarHistoricoRegistro,
+  type EventoRegistro,
 } from '../../src/database/registros';
 
-import { consultarParceiros } from '../../src/services/parceiros';
+import {
+  buscarAvaliacao,
+} from '../../src/database/avaliacoes';
+
+import {
+  gerarTriagem,
+} from '../../src/services/avaliacao';
+
+import {
+  consultarParceiros,
+} from '../../src/services/parceiros';
+
 import { theme } from '../../src/theme';
 
 import {
   STATUS_REGISTRO,
+  type Avaliacao,
   type Parceiro,
   type Registro,
   type StatusRegistro,
 } from '../../src/types';
 
+const EXPLICACOES_STATUS: Record<StatusRegistro, string> = {
+  Registrado:
+    'O relato foi salvo. Você pode complementar as informações com o questionário.',
+
+  'Em análise':
+    'Na simulação, as informações estão sendo analisadas. Isso não representa avaliação técnica real.',
+
+  'Em melhoria':
+    'Na simulação, existem melhorias em andamento. Nenhuma execução de obra é confirmada pelo aplicativo.',
+
+  'Melhoria informada':
+    'Na simulação, uma melhoria foi informada. Esse status não certifica acessibilidade nem confirma sua resolução.',
+};
+
 export default function DetalheScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const db = useSQLiteContext();
 
-  const operacaoEmAndamento = useRef(false);
+  const bloqueio = useRef(false);
 
   const [registro, setRegistro] = useState<Registro | null>(null);
+  const [avaliacao, setAvaliacao] = useState<Avaliacao | null>(
+    null,
+  );
+
+  const [historico, setHistorico] = useState<EventoRegistro[]>(
+    [],
+  );
+
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
+  const [erroHistorico, setErroHistorico] = useState('');
 
   const [statusSelecionado, setStatusSelecionado] =
     useState<StatusRegistro>('Registrado');
@@ -71,9 +111,10 @@ export default function DetalheScreen() {
   const [loadingParceiros, setLoadingParceiros] = useState(false);
   const [erroParceiros, setErroParceiros] = useState('');
 
-  const carregarRegistro = useCallback(async () => {
+  const carregar = useCallback(async () => {
     setLoading(true);
     setErro('');
+    setErroHistorico('');
 
     try {
       const registroId = Number(id);
@@ -83,16 +124,26 @@ export default function DetalheScreen() {
         return;
       }
 
-      const resultado = await buscarRegistro(db, registroId);
+      const [
+        registroEncontrado,
+        avaliacaoEncontrada,
+        eventosEncontrados,
+      ] = await Promise.all([
+        buscarRegistro(db, registroId),
+        buscarAvaliacao(db, registroId),
+        listarHistoricoRegistro(db, registroId),
+      ]);
 
-      setRegistro(resultado);
+      setRegistro(registroEncontrado);
+      setAvaliacao(avaliacaoEncontrada);
+      setHistorico(eventosEncontrados);
       setErroFoto(false);
 
-      if (resultado) {
-        setStatusSelecionado(resultado.status);
+      if (registroEncontrado) {
+        setStatusSelecionado(registroEncontrado.status);
       }
     } catch {
-      setErro('Não foi possível carregar este registro.');
+      setErro('Não foi possível carregar o acompanhamento.');
     } finally {
       setLoading(false);
     }
@@ -100,8 +151,10 @@ export default function DetalheScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void carregarRegistro();
-    }, [carregarRegistro]),
+      setMensagem('');
+      setConfirmarExclusao(false);
+      void carregar();
+    }, [carregar]),
   );
 
   const categoria = registro?.categoria;
@@ -128,10 +181,28 @@ export default function DetalheScreen() {
     void carregarParceiros();
   }, [carregarParceiros]);
 
-  async function salvarStatus() {
-    if (!registro || operacaoEmAndamento.current) return;
+  async function atualizarHistorico(registroId: number) {
+    setErroHistorico('');
 
-    operacaoEmAndamento.current = true;
+    try {
+      const eventos = await listarHistoricoRegistro(
+        db,
+        registroId,
+      );
+
+      setHistorico(eventos);
+    } catch {
+      setErroHistorico(
+        'Não foi possível atualizar a linha do tempo. Tente novamente.',
+      );
+    }
+  }
+
+  async function salvarStatus() {
+    if (!registro || bloqueio.current) return;
+    if (statusSelecionado === registro.status) return;
+
+    bloqueio.current = true;
     setSalvando(true);
     setErro('');
     setMensagem('');
@@ -149,50 +220,64 @@ export default function DetalheScreen() {
           : null,
       );
 
-      setMensagem('Status de demonstração salvo.');
+      setMensagem(
+        'Status simulado salvo. A mudança foi registrada no histórico.',
+      );
+
+      await atualizarHistorico(registro.id);
     } catch {
       setErro('Não foi possível atualizar o status.');
     } finally {
-      operacaoEmAndamento.current = false;
+      bloqueio.current = false;
       setSalvando(false);
     }
   }
 
   async function removerRegistro() {
-    if (!registro || operacaoEmAndamento.current) return;
+    if (!registro || bloqueio.current) return;
 
-    operacaoEmAndamento.current = true;
+    bloqueio.current = true;
     setSalvando(true);
     setErro('');
-    setMensagem('');
 
     try {
       await excluirRegistro(db, registro.id);
-      router.replace('/');
+      router.replace('/registros');
     } catch {
       setErro('Não foi possível excluir o registro.');
     } finally {
-      operacaoEmAndamento.current = false;
+      bloqueio.current = false;
       setSalvando(false);
     }
+  }
+
+  function abrirQuestionario() {
+    if (!registro) return;
+
+    router.push({
+      pathname: '/avaliar',
+      params: { id: String(registro.id) },
+    });
   }
 
   if (loading) {
     return (
       <Screen>
         <ActivityIndicator
-          accessibilityLabel="Carregando registro"
+          accessibilityLabel="Carregando acompanhamento"
           color={theme.colors.primary}
         />
+
+        <Body>Organizando as informações do relato…</Body>
       </Screen>
     );
   }
 
-  if (!registro) {
+  if (!registro || erro && !registro) {
     return (
       <Screen>
         <Title>
-          {erro ? 'Falha ao carregar' : 'Registro não encontrado'}
+          {erro ? 'Não conseguimos abrir o relato' : 'Relato não encontrado'}
         </Title>
 
         {erro ? (
@@ -201,14 +286,19 @@ export default function DetalheScreen() {
 
             <Button
               title="Tentar novamente"
-              onPress={() => void carregarRegistro()}
+              onPress={() => void carregar()}
             />
           </>
-        ) : null}
+        ) : (
+          <Body>
+            O registro pode ter sido excluído deste dispositivo.
+          </Body>
+        )}
 
         <Button
-          title="Voltar ao início"
-          onPress={() => router.replace('/')}
+          title="Ir para meus registros"
+          secondary
+          onPress={() => router.replace('/registros')}
         />
       </Screen>
     );
@@ -216,32 +306,22 @@ export default function DetalheScreen() {
 
   return (
     <Screen>
-      <Title>{registro.estabelecimento}</Title>
-
-      <Card>
-        <Text style={styles.status}>
-          Status: {registro.status}
+      <View style={styles.header}>
+        <Text style={styles.eyebrow}>
+          RELATO #{registro.id}
         </Text>
 
-        <Body>Local: {registro.localizacao}</Body>
-        <Body>Categoria: {registro.categoria}</Body>
-        <Body>{registro.descricao}</Body>
+        <Title>{registro.estabelecimento}</Title>
 
-        <Body>
-          Registrado em{' '}
-          {new Date(registro.criadoEm).toLocaleString('pt-BR')}
-        </Body>
-      </Card>
+        <StatusBadge status={registro.status} />
+
+        <Body>{EXPLICACOES_STATUS[registro.status]}</Body>
+      </View>
+
+      {erro ? <ErrorMessage message={erro} /> : null}
 
       {registro.foto ? (
         <Card>
-          <Text
-            accessibilityRole="header"
-            style={styles.heading}
-          >
-            Foto do relato
-          </Text>
-
           <Image
             source={{ uri: registro.foto }}
             accessibilityLabel={
@@ -253,42 +333,218 @@ export default function DetalheScreen() {
           />
 
           {erroFoto ? (
-            <ErrorMessage message="Não foi possível exibir a foto deste registro." />
+            <ErrorMessage message="Não foi possível exibir a foto deste relato." />
           ) : null}
         </Card>
       ) : null}
 
       <Card>
+        <View style={styles.sectionHeading}>
+          <Ionicons
+            name="document-text-outline"
+            size={theme.sizes.icon}
+            color={theme.colors.primary}
+            accessible={false}
+          />
+
+          <Text accessibilityRole="header" style={styles.heading}>
+            Informações do relato
+          </Text>
+        </View>
+
+        <Text style={styles.label}>LOCALIZAÇÃO</Text>
+        <Body>{registro.localizacao}</Body>
+
+        <Text style={styles.label}>CATEGORIA</Text>
+        <Body>{registro.categoria}</Body>
+
+        <Text style={styles.label}>DIFICULDADE RELATADA</Text>
+        <Body>{registro.descricao}</Body>
+
+        <Text style={styles.date}>
+          Criado em{' '}
+          {new Date(registro.criadoEm).toLocaleString('pt-BR')}
+        </Text>
+      </Card>
+
+      <View style={styles.nextStep}>
+        <Ionicons
+          name={
+            avaliacao
+              ? 'checkmark-circle-outline'
+              : 'clipboard-outline'
+          }
+          size={theme.sizes.largeIcon}
+          color={theme.colors.primary}
+          accessible={false}
+        />
+
         <Text accessibilityRole="header" style={styles.heading}>
-          Avaliação preliminar
+          {avaliacao
+            ? 'Informações complementadas'
+            : 'Próximo passo: completar o questionário'}
         </Text>
 
         <Body>
-          Complemente o relato com informações sobre entrada,
-          circulação, atendimento e sinalização.
+          {avaliacao
+            ? 'O questionário está salvo. Confira as observações abaixo e consulte as especialidades relacionadas.'
+            : 'Acrescente observações sobre entrada, circulação, atendimento e sinalização para organizar a triagem.'}
         </Body>
 
         <Button
-          title="Abrir questionário do estabelecimento"
-          disabled={salvando}
-          onPress={() =>
-            router.push({
-              pathname: '/avaliar',
-              params: { id: String(registro.id) },
-            })
+          title={
+            avaliacao
+              ? 'Revisar questionário'
+              : 'Preencher avaliação preliminar'
           }
+          disabled={salvando}
+          onPress={abrirQuestionario}
         />
-      </Card>
+      </View>
+
+      {avaliacao ? (
+        <Card>
+          <View style={styles.sectionHeading}>
+            <Ionicons
+              name="clipboard-outline"
+              size={theme.sizes.icon}
+              color={theme.colors.primary}
+              accessible={false}
+            />
+
+            <Text accessibilityRole="header" style={styles.heading}>
+              Resumo da avaliação
+            </Text>
+          </View>
+
+          <Body>Entrada: {avaliacao.entrada}</Body>
+          <Body>Circulação: {avaliacao.circulacao}</Body>
+          <Body>Atendimento: {avaliacao.atendimento}</Body>
+          <Body>Sinalização: {avaliacao.sinalizacao}</Body>
+
+          {avaliacao.larguraEntrada ? (
+            <Body>
+              Largura livre informada: {avaliacao.larguraEntrada} cm
+            </Body>
+          ) : null}
+
+          {avaliacao.observacoes ? (
+            <Body>
+              Observações: {avaliacao.observacoes}
+            </Body>
+          ) : null}
+
+          <Text style={styles.date}>
+            Atualizado em{' '}
+            {new Date(
+              avaliacao.atualizadoEm,
+            ).toLocaleString('pt-BR')}
+          </Text>
+
+          <Text accessibilityRole="header" style={styles.heading}>
+            Pontos para atenção
+          </Text>
+
+          {gerarTriagem(avaliacao).map((orientacao) => (
+            <View key={orientacao} style={styles.observation}>
+              <Ionicons
+                name="information-circle-outline"
+                size={theme.sizes.icon}
+                color={theme.colors.primary}
+                accessible={false}
+              />
+
+              <Text style={styles.observationText}>
+                {orientacao}
+              </Text>
+            </View>
+          ))}
+
+          <Body>
+            Respostas declaradas. Esta triagem não certifica
+            acessibilidade nem substitui avaliação técnica.
+          </Body>
+        </Card>
+      ) : null}
+
+      <Text accessibilityRole="header" style={styles.heading}>
+        Linha do tempo
+      </Text>
+
+      <Body>
+        Histórico salvo neste dispositivo.
+        As alterações de status são simulações acadêmicas.
+      </Body>
+
+      {erroHistorico ? (
+        <Card>
+          <ErrorMessage message={erroHistorico} />
+
+          <Button
+            title="Atualizar linha do tempo"
+            secondary
+            onPress={() =>
+              void atualizarHistorico(registro.id)
+            }
+          />
+        </Card>
+      ) : null}
+
+      {historico.length === 0 ? (
+        <Card>
+          <Body>
+            Ainda não há eventos disponíveis para este relato.
+          </Body>
+        </Card>
+      ) : (
+        <Card>
+          {historico.map((evento, indice) => (
+            <View key={evento.id} style={styles.timelineItem}>
+              <View style={styles.timelineRail}>
+                <View
+                  style={[
+                    styles.timelineDot,
+                    indice === 0 && styles.latestDot,
+                  ]}
+                />
+
+                {indice < historico.length - 1 ? (
+                  <View style={styles.timelineLine} />
+                ) : null}
+              </View>
+
+              <View style={styles.timelineContent}>
+                {indice === 0 ? (
+                  <Text style={styles.latestLabel}>
+                    MAIS RECENTE
+                  </Text>
+                ) : null}
+
+                <Text style={styles.eventTitle}>
+                  {evento.titulo}
+                </Text>
+
+                <Text style={styles.date}>
+                  {new Date(
+                    evento.criadoEm,
+                  ).toLocaleString('pt-BR')}
+                </Text>
+
+                <Body>{evento.descricao}</Body>
+              </View>
+            </View>
+          ))}
+        </Card>
+      )}
 
       <Card>
         <Text accessibilityRole="header" style={styles.heading}>
-          Acompanhamento de demonstração
+          Simular atualização
         </Text>
 
         <Body>
-          Altere o status para simular o acompanhamento.
-          Esta ação é salva apenas neste dispositivo e não
-          representa uma resposta do estabelecimento.
+          Este controle demonstra o acompanhamento.
+          Nenhum estabelecimento ou profissional é notificado.
         </Body>
 
         <View style={styles.options}>
@@ -329,7 +585,7 @@ export default function DetalheScreen() {
         </View>
 
         <Button
-          title="Salvar status simulado"
+          title="Salvar atualização simulada"
           loading={salvando}
           disabled={statusSelecionado === registro.status}
           onPress={() => void salvarStatus()}
@@ -371,14 +627,18 @@ export default function DetalheScreen() {
       ) : parceiros.length === 0 ? (
         <Card>
           <Body>
-            Ainda não há parceiros de demonstração para
-            esta categoria.
+            Ainda não há parceiros de demonstração
+            para esta categoria.
           </Body>
         </Card>
       ) : (
         parceiros.map((parceiro) => (
           <Card key={parceiro.id}>
-            <Text style={styles.partnerName}>
+            <Text style={styles.label}>
+              EXEMPLO FICTÍCIO
+            </Text>
+
+            <Text style={styles.heading}>
               {parceiro.nome}
             </Text>
 
@@ -387,17 +647,15 @@ export default function DetalheScreen() {
         ))
       )}
 
-      {erro ? <ErrorMessage message={erro} /> : null}
-
       {confirmarExclusao ? (
         <Card>
           <Text accessibilityRole="header" style={styles.heading}>
-            Excluir este registro?
+            Excluir este relato?
           </Text>
 
           <Body>
-            O registro, sua foto e o questionário associado
-            serão removidos do banco local.
+            O registro, a foto, o questionário associado
+            e a linha do tempo serão removidos do banco local.
             Esta ação não pode ser desfeita.
           </Body>
 
@@ -416,7 +674,7 @@ export default function DetalheScreen() {
         </Card>
       ) : (
         <Button
-          title="Excluir registro"
+          title="Excluir relato"
           secondary
           disabled={salvando}
           onPress={() => setConfirmarExclusao(true)}
@@ -427,23 +685,45 @@ export default function DetalheScreen() {
         title="Voltar aos meus registros"
         secondary
         disabled={salvando}
-        onPress={() => router.replace('/')}
+        onPress={() => router.replace('/registros')}
       />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  header: {
+    gap: theme.spacing.md,
+  },
+
+  eyebrow: {
+    fontSize: theme.fontSize.small,
+    fontWeight: '800',
+    color: theme.colors.primary,
+  },
+
   heading: {
+    flexShrink: 1,
     fontSize: theme.fontSize.subtitle,
     fontWeight: '700',
     color: theme.colors.text,
   },
 
-  status: {
-    fontSize: theme.fontSize.body,
+  sectionHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+
+  label: {
+    fontSize: theme.fontSize.small,
     fontWeight: '700',
     color: theme.colors.primary,
+  },
+
+  date: {
+    fontSize: theme.fontSize.small,
+    color: theme.colors.muted,
   },
 
   photo: {
@@ -451,6 +731,71 @@ const styles = StyleSheet.create({
     height: theme.sizes.photoHeight,
     borderRadius: theme.radius.small,
     backgroundColor: theme.colors.background,
+  },
+
+  nextStep: {
+    padding: theme.spacing.lg,
+    gap: theme.spacing.md,
+    borderRadius: theme.radius.medium,
+    backgroundColor: theme.colors.primaryLight,
+  },
+
+  observation: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: theme.spacing.sm,
+  },
+
+  observationText: {
+    flex: 1,
+    fontSize: theme.fontSize.body,
+    lineHeight: theme.fontSize.body * 1.5,
+    color: theme.colors.muted,
+  },
+
+  timelineItem: {
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+  },
+
+  timelineRail: {
+    alignItems: 'center',
+    width: theme.spacing.md,
+  },
+
+  timelineDot: {
+    width: theme.spacing.md,
+    height: theme.spacing.md,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.border,
+  },
+
+  latestDot: {
+    backgroundColor: theme.colors.primary,
+  },
+
+  timelineLine: {
+    flex: 1,
+    width: 2,
+    backgroundColor: theme.colors.border,
+  },
+
+  timelineContent: {
+    flex: 1,
+    gap: theme.spacing.sm,
+    paddingBottom: theme.spacing.lg,
+  },
+
+  latestLabel: {
+    fontSize: theme.fontSize.small,
+    fontWeight: '800',
+    color: theme.colors.primary,
+  },
+
+  eventTitle: {
+    fontSize: theme.fontSize.body,
+    fontWeight: '700',
+    color: theme.colors.text,
   },
 
   options: {
@@ -485,11 +830,5 @@ const styles = StyleSheet.create({
   feedback: {
     fontSize: theme.fontSize.body,
     color: theme.colors.primary,
-  },
-
-  partnerName: {
-    fontSize: theme.fontSize.body,
-    fontWeight: '600',
-    color: theme.colors.text,
   },
 });

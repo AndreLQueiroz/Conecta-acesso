@@ -5,10 +5,14 @@ import type {
   Registro,
 } from '../types';
 
-/**
- * Cria a tabela e atualiza bancos existentes.
- * Não apaga os registros já cadastrados.
- */
+export type EventoRegistro = {
+  id: number;
+  registroId: number;
+  titulo: string;
+  descricao: string;
+  criadoEm: string;
+};
+
 export async function iniciarBanco(
   db: SQLiteDatabase,
 ): Promise<void> {
@@ -25,7 +29,6 @@ export async function iniciarBanco(
     );
   `);
 
-  // Bancos criados pela primeira versão ainda não possuem foto.
   const colunas = await db.getAllAsync<{ name: string }>(
     'PRAGMA table_info(registros)',
   );
@@ -35,15 +38,88 @@ export async function iniciarBanco(
   );
 
   if (!temColunaFoto) {
-    await db.execAsync(`
-      ALTER TABLE registros ADD COLUMN foto TEXT;
-    `);
+    await db.execAsync(
+      'ALTER TABLE registros ADD COLUMN foto TEXT',
+    );
   }
+
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS historico_registros (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      registroId INTEGER NOT NULL,
+      titulo TEXT NOT NULL,
+      descricao TEXT NOT NULL,
+      criadoEm TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_historico_registro
+    ON historico_registros (registroId, id);
+
+    CREATE TRIGGER IF NOT EXISTS historico_apos_criar_registro
+    AFTER INSERT ON registros
+    BEGIN
+      INSERT INTO historico_registros (
+        registroId,
+        titulo,
+        descricao,
+        criadoEm
+      )
+      VALUES (
+        NEW.id,
+        'Relato registrado',
+        'Registro salvo neste dispositivo. Nenhum estabelecimento foi notificado.',
+        NEW.criadoEm
+      );
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS historico_apos_alterar_status
+    AFTER UPDATE OF status ON registros
+    WHEN OLD.status <> NEW.status
+    BEGIN
+      INSERT INTO historico_registros (
+        registroId,
+        titulo,
+        descricao,
+        criadoEm
+      )
+      VALUES (
+        NEW.id,
+        'Status atualizado: ' || NEW.status,
+        'Simulação acadêmica. Status anterior: ' || OLD.status ||
+        '. Não representa resposta do estabelecimento.',
+        strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      );
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS historico_apos_excluir_registro
+    AFTER DELETE ON registros
+    BEGIN
+      DELETE FROM historico_registros
+      WHERE registroId = OLD.id;
+    END;
+
+    INSERT INTO historico_registros (
+      registroId,
+      titulo,
+      descricao,
+      criadoEm
+    )
+    SELECT
+      registros.id,
+      'Acompanhamento iniciado',
+      'Registro anterior à linha do tempo. Status observado: ' ||
+      registros.status ||
+      '. Mudanças anteriores não foram registradas.',
+      strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    FROM registros
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM historico_registros
+      WHERE historico_registros.registroId = registros.id
+    );
+  `);
 }
 
-/**
- * Salva um novo registro e retorna seu identificador.
- */
 export async function criarRegistro(
   db: SQLiteDatabase,
   registro: NovoRegistro,
@@ -73,9 +149,6 @@ export async function criarRegistro(
   return resultado.lastInsertRowId;
 }
 
-/**
- * Lista os registros do mais recente para o mais antigo.
- */
 export async function listarRegistros(
   db: SQLiteDatabase,
 ): Promise<Registro[]> {
@@ -88,9 +161,6 @@ export async function listarRegistros(
   );
 }
 
-/**
- * Busca um registro pelo identificador.
- */
 export async function buscarRegistro(
   db: SQLiteDatabase,
   id: number,
@@ -105,9 +175,21 @@ export async function buscarRegistro(
   );
 }
 
-/**
- * Atualiza o status de demonstração de um registro.
- */
+export async function listarHistoricoRegistro(
+  db: SQLiteDatabase,
+  registroId: number,
+): Promise<EventoRegistro[]> {
+  return db.getAllAsync<EventoRegistro>(
+    `
+      SELECT *
+      FROM historico_registros
+      WHERE registroId = ?
+      ORDER BY id DESC
+    `,
+    registroId,
+  );
+}
+
 export async function atualizarStatusRegistro(
   db: SQLiteDatabase,
   id: number,
@@ -126,22 +208,17 @@ export async function atualizarStatusRegistro(
   if (resultado.changes === 0) {
     throw new Error('Registro não encontrado.');
   }
+
+  // O gatilho registra a mudança na mesma operação do banco.
+  // Salvar o mesmo status não cria um novo evento.
 }
 
-/**
- * Exclui um registro.
- * Se a tabela de avaliações já estiver configurada,
- * seu gatilho também remove o questionário correspondente.
- */
 export async function excluirRegistro(
   db: SQLiteDatabase,
   id: number,
 ): Promise<void> {
   await db.runAsync(
-    `
-      DELETE FROM registros
-      WHERE id = ?
-    `,
+    'DELETE FROM registros WHERE id = ?',
     id,
   );
 }
