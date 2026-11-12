@@ -5,6 +5,16 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { theme } from '../../src/theme';
 
+import { useState } from 'react';
+
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+
 type NomeIcone =
   ComponentProps<typeof Ionicons>['name'];
 

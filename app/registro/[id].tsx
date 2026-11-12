@@ -85,16 +85,16 @@ export default function DetalheScreen() {
   const bloqueio = useRef(false);
 
   const [registro, setRegistro] = useState<Registro | null>(null);
-  const [avaliacao, setAvaliacao] = useState<Avaliacao | null>(
-    null,
-  );
 
-  const [historico, setHistorico] = useState<EventoRegistro[]>(
-    [],
-  );
+  const [avaliacao, setAvaliacao] =
+    useState<Avaliacao | null>(null);
+
+  const [historico, setHistorico] =
+    useState<EventoRegistro[]>([]);
 
   const [loading, setLoading] = useState(true);
-  const [erro, setErro] = useState('');
+  const [erroCarregamento, setErroCarregamento] = useState('');
+  const [erroAcao, setErroAcao] = useState('');
   const [erroHistorico, setErroHistorico] = useState('');
 
   const [statusSelecionado, setStatusSelecionado] =
@@ -113,7 +113,7 @@ export default function DetalheScreen() {
 
   const carregar = useCallback(async () => {
     setLoading(true);
-    setErro('');
+    setErroCarregamento('');
     setErroHistorico('');
 
     try {
@@ -143,7 +143,9 @@ export default function DetalheScreen() {
         setStatusSelecionado(registroEncontrado.status);
       }
     } catch {
-      setErro('Não foi possível carregar o acompanhamento.');
+      setErroCarregamento(
+        'Não foi possível carregar o acompanhamento.',
+      );
     } finally {
       setLoading(false);
     }
@@ -152,7 +154,9 @@ export default function DetalheScreen() {
   useFocusEffect(
     useCallback(() => {
       setMensagem('');
+      setErroAcao('');
       setConfirmarExclusao(false);
+
       void carregar();
     }, [carregar]),
   );
@@ -200,11 +204,12 @@ export default function DetalheScreen() {
 
   async function salvarStatus() {
     if (!registro || bloqueio.current) return;
+
     if (statusSelecionado === registro.status) return;
 
     bloqueio.current = true;
     setSalvando(true);
-    setErro('');
+    setErroAcao('');
     setMensagem('');
 
     try {
@@ -221,12 +226,12 @@ export default function DetalheScreen() {
       );
 
       setMensagem(
-        'Status simulado salvo. A mudança foi registrada no histórico.',
+        'Atualização salva neste dispositivo e registrada na linha do tempo.',
       );
 
       await atualizarHistorico(registro.id);
     } catch {
-      setErro('Não foi possível atualizar o status.');
+      setErroAcao('Não foi possível atualizar o status.');
     } finally {
       bloqueio.current = false;
       setSalvando(false);
@@ -238,13 +243,13 @@ export default function DetalheScreen() {
 
     bloqueio.current = true;
     setSalvando(true);
-    setErro('');
+    setErroAcao('');
 
     try {
       await excluirRegistro(db, registro.id);
       router.replace('/registros');
     } catch {
-      setErro('Não foi possível excluir o registro.');
+      setErroAcao('Não foi possível excluir o registro.');
     } finally {
       bloqueio.current = false;
       setSalvando(false);
@@ -273,27 +278,17 @@ export default function DetalheScreen() {
     );
   }
 
-  if (!registro || erro && !registro) {
+  if (erroCarregamento) {
     return (
       <Screen>
-        <Title>
-          {erro ? 'Não conseguimos abrir o relato' : 'Relato não encontrado'}
-        </Title>
+        <Title>Não conseguimos abrir o relato</Title>
 
-        {erro ? (
-          <>
-            <ErrorMessage message={erro} />
+        <ErrorMessage message={erroCarregamento} />
 
-            <Button
-              title="Tentar novamente"
-              onPress={() => void carregar()}
-            />
-          </>
-        ) : (
-          <Body>
-            O registro pode ter sido excluído deste dispositivo.
-          </Body>
-        )}
+        <Button
+          title="Tentar novamente"
+          onPress={() => void carregar()}
+        />
 
         <Button
           title="Ir para meus registros"
@@ -303,6 +298,25 @@ export default function DetalheScreen() {
       </Screen>
     );
   }
+
+  if (!registro) {
+    return (
+      <Screen>
+        <Title>Relato não encontrado</Title>
+
+        <Body>
+          O registro pode ter sido excluído deste dispositivo.
+        </Body>
+
+        <Button
+          title="Ir para meus registros"
+          onPress={() => router.replace('/registros')}
+        />
+      </Screen>
+    );
+  }
+
+  const statusJaSalvo = statusSelecionado === registro.status;
 
   return (
     <Screen>
@@ -317,8 +331,6 @@ export default function DetalheScreen() {
 
         <Body>{EXPLICACOES_STATUS[registro.status]}</Body>
       </View>
-
-      {erro ? <ErrorMessage message={erro} /> : null}
 
       {registro.foto ? (
         <Card>
@@ -404,18 +416,9 @@ export default function DetalheScreen() {
 
       {avaliacao ? (
         <Card>
-          <View style={styles.sectionHeading}>
-            <Ionicons
-              name="clipboard-outline"
-              size={theme.sizes.icon}
-              color={theme.colors.primary}
-              accessible={false}
-            />
-
-            <Text accessibilityRole="header" style={styles.heading}>
-              Resumo da avaliação
-            </Text>
-          </View>
+          <Text accessibilityRole="header" style={styles.heading}>
+            Resumo da avaliação
+          </Text>
 
           <Body>Entrada: {avaliacao.entrada}</Body>
           <Body>Circulação: {avaliacao.circulacao}</Body>
@@ -483,6 +486,7 @@ export default function DetalheScreen() {
           <Button
             title="Atualizar linha do tempo"
             secondary
+            disabled={salvando}
             onPress={() =>
               void atualizarHistorico(registro.id)
             }
@@ -564,6 +568,7 @@ export default function DetalheScreen() {
                 onPress={() => {
                   setStatusSelecionado(status);
                   setMensagem('');
+                  setErroAcao('');
                 }}
                 style={[
                   styles.option,
@@ -584,10 +589,25 @@ export default function DetalheScreen() {
           })}
         </View>
 
+        <View
+          accessibilityLiveRegion="polite"
+          style={styles.statusExplanation}
+        >
+          <Body>
+            {statusJaSalvo
+              ? `O status atual já é “${registro.status}”. Selecione outro para registrar uma mudança.`
+              : `Você vai alterar o status de “${registro.status}” para “${statusSelecionado}”.`}
+          </Body>
+        </View>
+
         <Button
-          title="Salvar atualização simulada"
+          title={
+            statusJaSalvo
+              ? 'Status já salvo'
+              : 'Salvar atualização simulada'
+          }
           loading={salvando}
-          disabled={statusSelecionado === registro.status}
+          disabled={statusJaSalvo}
           onPress={() => void salvarStatus()}
         />
 
@@ -646,6 +666,8 @@ export default function DetalheScreen() {
           </Card>
         ))
       )}
+
+      {erroAcao ? <ErrorMessage message={erroAcao} /> : null}
 
       {confirmarExclusao ? (
         <Card>
@@ -827,8 +849,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  statusExplanation: {
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.small,
+    backgroundColor: theme.colors.background,
+  },
+
   feedback: {
     fontSize: theme.fontSize.body,
-    color: theme.colors.primary,
+    color: theme.colors.success,
   },
 });
